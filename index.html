@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Controle de Aeroporto - FATEC</title>
+    <style>
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #0d1117;
+            color: #c9d1d9;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            color: #58a6ff;
+            font-size: 1.2rem;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: #161b22;
+            border: 2px solid #30363d;
+            padding: 15px;
+            border-radius: 6px;
+        }
+        .painel-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 15px;
+        }
+        @media (max-width: 768px) {
+            .painel-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        .box {
+            background: #21262d;
+            border: 1px solid #30363d;
+            padding: 10px;
+            border-radius: 4px;
+            min-height: 120px;
+        }
+        .box h3 {
+            margin-top: 0;
+            font-size: 0.9rem;
+            color: #8b949e;
+            border-bottom: 1px solid #30363d;
+            padding-bottom: 5px;
+        }
+        ul {
+            padding-left: 15px;
+            margin: 5px 0;
+            font-size: 0.85rem;
+        }
+        .controls {
+            text-align: center;
+            margin-top: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+        }
+        button {
+            background-color: #238636;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #2ea043;
+        }
+        button.log-btn {
+            background-color: #1f6feb;
+        }
+        button.log-btn:hover {
+            background-color: #388bfd;
+        }
+        button.sair {
+            background-color: #da3633;
+        }
+        button.sair:hover {
+            background-color: #f85149;
+        }
+        .stats {
+            margin-top: 15px;
+            background: #0d1117;
+            padding: 10px;
+            border: 1px solid #30363d;
+            font-size: 0.85rem;
+        }
+        .log-area {
+            margin-top: 15px;
+            background: #000;
+            color: #0f0;
+            padding: 10px;
+            height: 120px;
+            overflow-y: auto;
+            font-size: 0.75rem;
+            border: 1px solid #30363d;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>SISTEMA DE CONTROLE DE POUSOS E DECOLAGENS</h1>
+    <p style="text-align: center; font-size: 0.8rem; color: #8b949e;">Baseado no trabalho original de João Inácio & Igor Serrão (FATEC)</p>
+    
+    <div style="display: flex; justify-content: space-between; font-weight: bold; color: #7ee787;">
+        <span id="lblCiclo">CICLO: 0</span>
+        <span id="lblPista">PISTAS ATIVAS: 1</span>
+    </div>
+
+    <div class="painel-grid">
+        <div class="box">
+            <h3>SOLICITAÇÕES PARA POUSO (Ordenado por Combustível)</h3>
+            <ul id="listaPouso"><li>Nenhum</li></ul>
+        </div>
+        <div class="box">
+            <h3>SOLICITAÇÕES DE DECOLAGEM</h3>
+            <ul id="listaDecolagem"><li>Nenhum</li></ul>
+        </div>
+    </div>
+
+    <div class="painel-grid">
+        <div class="box">
+            <h3>OPERAÇÕES REALIZADAS NO CICLO</h3>
+            <p id="opPista1" style="font-size: 0.85rem;">Pista 1 -> -</p>
+            <p id="opPista2" style="font-size: 0.85rem;">Pista 2 -> - (Bloqueada)</p>
+        </div>
+        <div class="box">
+            <h3>REDIRECIONAMENTOS</h3>
+            <ul id="listaRedirect"><li>Nenhum</li></ul>
+        </div>
+    </div>
+
+    <div class="stats">
+        <strong>DADOS ESTATÍSTICOS GLOBAIS:</strong><br>
+        Total de Operações: <span id="stTotal">0</span> | 
+        Pousos: <span id="stPousos">0</span> (<span id="pcPousos">0</span>%) | 
+        Decolagens: <span id="stDecolagens">0</span> (<span id="pcDecolagens">0</span>%) | 
+        Redirecionamentos: <span id="stRedir">0</span> (<span id="pcRedir">0</span>%)
+    </div>
+
+    <div class="controls">
+        <button onclick="executarCiclo()">Novo Ciclo (Enter)</button>
+        <button onclick="alternarPista()">Alternar Pista 2 (P)</button>
+        <button class="log-btn" onclick="baixarLog()">Baixar airport.log</button>
+        <button class="sair" onclick="reiniciar()">Reiniciar</button>
+    </div>
+
+    <div class="log-area" id="logArea">
+        [Sistema Inicializado. Pronto para iniciar os ciclos...]
+    </div>
+</div>
+
+<script>
+    let ciclo = 0;
+    let psqav = 0;
+    let pista2Ativa = false;
+    
+    let filaPouso = [];       // {id, cb}
+    let filaDecolagem = [];   // {id}
+    let filaRedirect = [];    // {id, cb}
+
+    let pntpo = 0, pntde = 0, pntrd = 0, pntor = 0;
+    
+    // Conteúdo inicial do arquivo de Log estilo FATEC
+    let conteudoLog = "==========================================================================\n";
+    conteudoLog += "          TRABALHO DA DISCIPLINA ESTRUTURA DE DADOS - PROF. PAULO CANDIDO \n";
+    conteudoLog += "              FATEC - INFORMATICA COM ENFASE EM GESTAO  CICLO 4 - NOTURNO \n";
+    conteudoLog += "                    ALUNOS:  JOAO INACIO CELLI DIAS / IGOR SERRAO RIBEIRO \n";
+    conteudoLog += "==========================================================================\n\n";
+    conteudoLog += "           RELATORIO DE OPERACOES DO AEROPORTO   JOAO & IGOR              \n\n";
+    let dataAtual = new Date();
+    conteudoLog += `                                                      Data: ${dataAtual.getDate()} / ${dataAtual.getMonth()+1} / ${dataAtual.getFullYear()}  \n\n`;
+
+    function log(texto) {
+        const area = document.getElementById('logArea');
+        area.innerHTML += "<br>" + texto;
+        area.scrollTop = area.scrollHeight;
+    }
+
+    function alternarPista() {
+        pista2Ativa = !pista2Ativa;
+        document.getElementById('lblPista').innerText = "PISTAS ATIVAS: " + (pista2Ativa ? 2 : 1);
+        log(`[Controle] Pista 2 ${pista2Ativa ? 'Liberada' : 'Bloqueada'}.`);
+    }
+
+    function executarCiclo() {
+        ciclo++;
+        document.getElementById('lblCiclo').innerText = "CICLO: " + ciclo;
+
+        // 1. Decrementa combustível da fila de pouso
+        filaPouso.forEach( av => av.cb-- );
+
+        // 2. Gera pedidos de decolagem (0 a 2)
+        let r3 = Math.floor(Math.random() * 3);
+        for(let i=0; i<r3; i++) {
+            if(filaDecolagem.length < 25) {
+                psqav++;
+                filaDecolagem.push({ id: psqav });
+            }
+        }
+
+        let pistasDisponiveis = pista2Ativa ? 2 : 1;
+        let opPista1Str = "-", opPista2Str = "-";
+        let up1 = "NENHUM", avd1 = 0;
+        let up2 = "NENHUM", avd2 = 0;
+
+        for(let p = 1; p <= pistasDisponiveis; p++) {
+            let acao = "";
+            let aviaoEscolhido = null;
+
+            if(filaPouso.length > 0 && (pista2Ativa || p === 1)) {
+                aviaoEscolhido = filaPouso.shift();
+                pntpo++;
+                acao = `POUSO      AVIAO -> AV.${aviaoEscolhido.id}`;
+                if(p === 1) { up1 = "POUSO    "; avd1 = aviaoEscolhido.id; }
+                if(p === 2) { up2 = "POUSO    "; avd2 = aviaoEscolhido.id; }
+            } else if(filaDecolagem.length > 0) {
+                aviaoEscolhido = filaDecolagem.shift();
+                pntde++;
+                acao = `DECOLAGEM  AVIAO -> AV.${aviaoEscolhido.id}`;
+                if(p === 1) { up1 = "DECOLAGEM"; avd1 = aviaoEscolhido.id; }
+                if(p === 2) { up2 = "DECOLAGEM"; avd2 = aviaoEscolhido.id; }
+            }
+
+            if(p === 1) opPista1Str = acao ? `Pista 1 -> ${acao}` : "Pista 1 -> Vazia";
+            if(p === 2) opPista2Str = acao ? `Pista 2 -> ${acao}` : "Pista 2 -> Vazia";
+        }
+
+        // 3. Gera pedidos de pouso (0 a 3)
+        let r4 = Math.floor(Math.random() * 4);
+        for(let i=0; i<r4; i++) {
+            let r6 = Math.floor(Math.random() * 6) + 5; 
+            if(filaPouso.length < 9) {
+                psqav++;
+                let novoAv = { id: psqav, cb: r6 };
+                filaPouso.push(novoAv);
+                filaPouso.sort((a, b) => a.cb - b.cb);
+            } else {
+                psqav++;
+                pntrd++;
+                filaRedirect.push({ id: psqav, cb: r6 });
+            }
+        }
+
+        pntor = pntpo + pntde + pntrd;
+        let ppor = pntor ? Math.round((pntpo / pntor) * 100) : 0;
+        let pdor = pntor ? Math.round((pntde / pntor) * 100) : 0;
+        let pror = pntor ? Math.round((pntrd / pntor) * 100) : 0;
+
+        // Atualiza Tela
+        document.getElementById('opPista1').innerText = opPista1Str;
+        document.getElementById('opPista2').innerText = pista2Ativa ? opPista2Str : "Pista 2 -> (Bloqueada)";
+        
+        document.getElementById('stTotal').innerText = pntor;
+        document.getElementById('stPousos').innerText = pntpo;
+        document.getElementById('pcPousos').innerText = ppor;
+        document.getElementById('stDecolagens').innerText = pntde;
+        document.getElementById('pcDecolagens').innerText = pdor;
+        document.getElementById('stRedir').innerText = pntrd;
+        document.getElementById('pcRedir').innerText = pror;
+
+        atualizarListas();
+
+        // Grava no Log estruturado igualzinho ao original
+        conteudoLog += `CICLO: ${ciclo}\n\n`;
+        conteudoLog += `OPERACOES NO CICLO:\n\n`;
+        conteudoLog += `PISTA 1 -> ${up1}  AVIAO -> AV.${avd1}\n`;
+        if(pista2Ativa && avd2 !== 0) {
+            conteudoLog += `PISTA 2 -> ${up2}  AVIAO -> AV.${avd2}\n\n`;
+        } else {
+            conteudoLog += `\n`;
+        }
+        conteudoLog += `SOLICITACOES DE DECOLAGEM -> ${r3}\n`;
+        conteudoLog += `SOLICITACOES DE POUSO     -> ${r4}\n\n`;
+        
+        conteudoLog += `AVIOES REDIRECIONADOS PARA OUTROS AEROPORTOS:\n\n`;
+        if(filaRedirect.length === 0) conteudoLog += `   -> Nenhum <-\n`;
+        else {
+            filaRedirect.forEach((av, idx) => {
+                conteudoLog += `  ${idx+1} - AVIAO ->  AV.${av.id}   COMBUSTIVEL -> ${av.cb} \n`;
+            });
+        }
+
+        conteudoLog += `\nFILA DE ESPERA PARA DECOLAGENS:\n\n`;
+        if(filaDecolagem.length === 0) conteudoLog += `   -> Nenhum <-\n`;
+        else {
+            filaDecolagem.forEach((av, idx) => {
+                conteudoLog += `  ${idx+1} - AVIAO ->  AV.${av.id} \n`;
+            });
+        }
+
+        conteudoLog += `\nFILA DE ESPERA PARA POUSOS:\n\n`;
+        if(filaPouso.length === 0) conteudoLog += `   -> Nenhum <-\n`;
+        else {
+            filaPouso.forEach((av, idx) => {
+                conteudoLog += `  ${idx+1} - AVIAO ->  AV.${av.id}   COMBUSTIVEL -> ${av.cb} \n`;
+            });
+        }
+
+        conteudoLog += `\nDADOS ESTATISTICOS GLOBAIS:\n\n`;
+        conteudoLog += `   QUANTIDADES DE OPERACOES\n\n`;
+        conteudoLog += `       TOTAL DE OPERACOES REALIZADAS: ${pntor}  \n`;
+        conteudoLog += `                POUSOS..............: ${pntpo}  \n`;
+        conteudoLog += `                DECOLAGENS..........: ${pntde}  \n`;
+        conteudoLog += `                REDIRECIONAMENTOS...: ${pntrd}  \n\n`;
+        conteudoLog += `       VALORES EM PERCENTUAIS\n\n`;
+        conteudoLog += `                POUSOS..............: ${ppor}%\n`;
+        conteudoLog += `                DECOLAGENS..........: ${pdor}%\n`;
+        conteudoLog += `                REDIRECIONAMENTOS...: ${pror}%\n\n`;
+        conteudoLog += `==========================================================================\n\n`;
+
+        log(`Ciclo ${ciclo} executado e registrado no log.`);
+    }
+
+    function atualizarListas() {
+        let htmlPouso = "";
+        if(filaPouso.length === 0) htmlPouso = "<li>Nenhum</li>";
+        else {
+            filaPouso.forEach((av, idx) => {
+                htmlPouso += `<li>${idx+1} - Av.${av.id} (Fuel: ${av.cb})</li>`;
+            });
+        }
+        document.getElementById('listaPouso').innerHTML = htmlPouso;
+
+        let htmlDec = "";
+        if(filaDecolagem.length === 0) htmlDec = "<li>Nenhum</li>";
+        else {
+            filaDecolagem.forEach((av, idx) => {
+                htmlDec += `<li>${idx+1} - Av.${av.id}</li>`;
+            });
+        }
+        document.getElementById('listaDecolagem').innerHTML = htmlDec;
+
+        let htmlRedir = "";
+        if(filaRedirect.length === 0) htmlRedir = "<li>Nenhum</li>";
+        else {
+            filaRedirect.forEach((av, idx) => {
+                htmlRedir += `<li>${idx+1} - Av.${av.id}</li>`;
+            });
+        }
+        document.getElementById('listaRedirect').innerHTML = htmlRedir;
+    }
+
+    function baixarLog() {
+        const blob = new Blob([conteudoLog], { type: 'text/plain;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'airport.log';
+        link.click();
+    }
+
+    function reiniciar() {
+        location.reload();
+    }
+</script>
+
+</body>
+</html>
